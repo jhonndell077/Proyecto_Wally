@@ -1,0 +1,33 @@
+{
+  "hosting": {
+    "public": ".",
+    "ignore": [
+      ".git/**",
+      "**/.git/**",
+      "firebase.json",
+      ".firebaserc",
+      ".firebaseignore",
+      ".gitignore",
+      "firebase-debug.log",
+      "_tmp_check.js",
+      "index.backup.before-ui-*.html",
+      "BarbutaKitchen.txt",
+      "firestore.*",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  },
+  "firestore": [
+    {
+      "database": "barbuta-kitchen",
+      "rules": "firestore.barbuta-kitchen.rules",
+      "indexes": "firestore.barbuta-kitchen.indexes.json"
+    }
+  ]
+}

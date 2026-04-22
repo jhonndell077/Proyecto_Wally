@@ -6,4 +6,5 @@ desktop.ini
 # Local backups and temp checks
 index.backup.before-ui-*.html
 _tmp_check.js
-
+firebase-debug.log
+.firebase/

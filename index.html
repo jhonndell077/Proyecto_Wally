@@ -660,13 +660,39 @@
   <script>
     const STORAGE_KEY = 'control_finanzas_inventario_v1';
 
-    const state = loadState();
+    const FIREBASE_CONFIG = {
+      projectId: 'luro-control',
+      appId: '1:541972603526:web:559dc85853c88d8c18e707',
+      storageBucket: 'luro-control.firebasestorage.app',
+      apiKey: 'AIzaSyDhEiZnBKsX-SIB_JjTHWkuSa1Ks_mrFxs',
+      authDomain: 'luro-control.firebaseapp.com',
+      messagingSenderId: '541972603526',
+      measurementId: 'G-DHN6FZW3LL',
+    };
+    const FIRESTORE_DATABASE_ID = 'barbuta-kitchen';
+    const CLOUD_STATE_COLLECTION = 'barbuta_finanzas';
+    const CLOUD_STATE_DOCUMENT = 'shared_state';
+
+    let state = initialState();
+    let localStateUpdatedAt = '';
+    const cloudSync = {
+      enabled: true,
+      initialized: false,
+      applyingRemoteState: false,
+      writeTimerId: null,
+      lastSnapshotSignature: '',
+      firebaseApi: null,
+      cloudRef: null,
+      unsubscribe: null,
+    };
 
     document.addEventListener('DOMContentLoaded', () => {
+      state = loadState();
       setupTabs();
       bindModalUI();
       bindForms();
       recalculateAndRender();
+      void initializeCloudSync_();
     });
 
     function initialState() {
@@ -682,22 +708,235 @@
     function loadState() {
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
-        if (!raw) return initialState();
+        if (!raw) {
+          localStateUpdatedAt = '';
+          return initialState();
+        }
+
         const parsed = JSON.parse(raw);
-        return {
-          ingresos: Array.isArray(parsed.ingresos) ? parsed.ingresos : [],
-          gastos: Array.isArray(parsed.gastos) ? parsed.gastos : [],
-          cxc: Array.isArray(parsed.cxc) ? parsed.cxc : [],
-          histIngresos: Array.isArray(parsed.histIngresos) ? parsed.histIngresos : [],
-          histGastos: Array.isArray(parsed.histGastos) ? parsed.histGastos : [],
-        };
+        if (parsed && typeof parsed === 'object' && parsed.state && typeof parsed.state === 'object') {
+          localStateUpdatedAt = clean(parsed.updatedAt);
+          return normalizeLoadedState_(parsed.state);
+        }
+
+        localStateUpdatedAt = '';
+        return normalizeLoadedState_(parsed);
       } catch (_) {
+        localStateUpdatedAt = '';
         return initialState();
       }
     }
 
+    function localSaveOnly_(updatedAtOverride) {
+      const updatedAt = clean(updatedAtOverride) || new Date().toISOString();
+      localStateUpdatedAt = updatedAt;
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({
+          version: 2,
+          updatedAt: updatedAt,
+          state: exportState_(),
+        })
+      );
+    }
+
     function saveState() {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      localSaveOnly_();
+      scheduleCloudWrite_();
+    }
+
+    function exportState_() {
+      return {
+        ingresos: Array.isArray(state.ingresos) ? state.ingresos : [],
+        gastos: Array.isArray(state.gastos) ? state.gastos : [],
+        cxc: Array.isArray(state.cxc) ? state.cxc : [],
+        histIngresos: Array.isArray(state.histIngresos) ? state.histIngresos : [],
+        histGastos: Array.isArray(state.histGastos) ? state.histGastos : [],
+      };
+    }
+
+    function normalizeLoadedState_(raw) {
+      const parsed = raw && typeof raw === 'object' ? raw : {};
+      return {
+        ingresos: Array.isArray(parsed.ingresos) ? parsed.ingresos : [],
+        gastos: Array.isArray(parsed.gastos) ? parsed.gastos : [],
+        cxc: Array.isArray(parsed.cxc) ? parsed.cxc : [],
+        histIngresos: Array.isArray(parsed.histIngresos) ? parsed.histIngresos : [],
+        histGastos: Array.isArray(parsed.histGastos) ? parsed.histGastos : [],
+      };
+    }
+
+    function createStateSignature_(payload) {
+      try {
+        return JSON.stringify(payload);
+      } catch (_) {
+        return '';
+      }
+    }
+
+    function countStateRows_(payload) {
+      const p = payload && typeof payload === 'object' ? payload : {};
+      return (
+        (Array.isArray(p.ingresos) ? p.ingresos.length : 0) +
+        (Array.isArray(p.gastos) ? p.gastos.length : 0) +
+        (Array.isArray(p.cxc) ? p.cxc.length : 0) +
+        (Array.isArray(p.histIngresos) ? p.histIngresos.length : 0) +
+        (Array.isArray(p.histGastos) ? p.histGastos.length : 0)
+      );
+    }
+
+    function parseIsoMs_(value) {
+      const s = clean(value);
+      if (!s) return NaN;
+      const ms = Date.parse(s);
+      return Number.isFinite(ms) ? ms : NaN;
+    }
+
+    function shouldUseRemoteState_(remotePayload, remoteUpdatedAt, localPayload, localUpdatedAt) {
+      const remoteMs = parseIsoMs_(remoteUpdatedAt);
+      const localMs = parseIsoMs_(localUpdatedAt);
+
+      if (Number.isFinite(remoteMs) && Number.isFinite(localMs)) {
+        return remoteMs >= localMs;
+      }
+
+      if (Number.isFinite(remoteMs) && !Number.isFinite(localMs)) {
+        return countStateRows_(remotePayload) >= countStateRows_(localPayload);
+      }
+
+      if (!Number.isFinite(remoteMs) && Number.isFinite(localMs)) {
+        return false;
+      }
+
+      return countStateRows_(remotePayload) >= countStateRows_(localPayload);
+    }
+
+    async function initializeCloudSync_() {
+      if (!cloudSync.enabled || cloudSync.initialized) return;
+
+      try {
+        const [{ initializeApp }, { getFirestore, doc, getDoc, setDoc, onSnapshot }] = await Promise.all([
+          import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js'),
+          import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js'),
+        ]);
+
+        const app = initializeApp(FIREBASE_CONFIG);
+        const db = getFirestore(app, FIRESTORE_DATABASE_ID);
+        const cloudRef = doc(db, CLOUD_STATE_COLLECTION, CLOUD_STATE_DOCUMENT);
+
+        cloudSync.firebaseApi = { getDoc, setDoc, onSnapshot };
+        cloudSync.cloudRef = cloudRef;
+
+        const localPayload = exportState_();
+        const localSig = createStateSignature_(localPayload);
+        const firstSnap = await getDoc(cloudRef);
+
+        if (firstSnap.exists()) {
+          const remoteData = firstSnap.data() || {};
+          const remotePayload = normalizeLoadedState_(remoteData.state || remoteData);
+          const remoteUpdatedAt = clean(remoteData.updatedAt);
+          const remoteSig = createStateSignature_(remotePayload);
+
+          if (remoteSig && remoteSig !== localSig) {
+            if (shouldUseRemoteState_(remotePayload, remoteUpdatedAt, localPayload, localStateUpdatedAt)) {
+              cloudSync.applyingRemoteState = true;
+              try {
+                state = remotePayload;
+                localSaveOnly_(remoteUpdatedAt);
+                recalculateAndRender();
+              } finally {
+                cloudSync.applyingRemoteState = false;
+              }
+            } else {
+              const localUpdatedAt = localStateUpdatedAt || new Date().toISOString();
+              await cloudSync.firebaseApi.setDoc(
+                cloudRef,
+                { state: localPayload, updatedAt: localUpdatedAt },
+                { merge: true }
+              );
+              localSaveOnly_(localUpdatedAt);
+            }
+          }
+
+          cloudSync.lastSnapshotSignature = createStateSignature_(exportState_());
+        } else {
+          const seedUpdatedAt = localStateUpdatedAt || new Date().toISOString();
+          await setDoc(cloudRef, { state: localPayload, updatedAt: seedUpdatedAt }, { merge: true });
+          localSaveOnly_(seedUpdatedAt);
+          cloudSync.lastSnapshotSignature = createStateSignature_(localPayload);
+        }
+
+        cloudSync.unsubscribe = onSnapshot(
+          cloudRef,
+          (snap) => {
+            if (!snap.exists()) return;
+            const remoteData = snap.data() || {};
+            const remotePayload = normalizeLoadedState_(remoteData.state || remoteData);
+            const remoteSig = createStateSignature_(remotePayload);
+
+            if (!remoteSig) return;
+            if (remoteSig === cloudSync.lastSnapshotSignature) return;
+            if (cloudSync.applyingRemoteState) return;
+
+            cloudSync.applyingRemoteState = true;
+            try {
+              state = remotePayload;
+              localSaveOnly_(clean(remoteData.updatedAt));
+              recalculateAndRender();
+              cloudSync.lastSnapshotSignature = remoteSig;
+            } finally {
+              cloudSync.applyingRemoteState = false;
+            }
+          },
+          (error) => {
+            console.error('Firestore snapshot error:', error);
+          }
+        );
+
+        cloudSync.initialized = true;
+      } catch (error) {
+        console.error('No se pudo inicializar Firestore:', error);
+      }
+    }
+
+    function scheduleCloudWrite_() {
+      if (!cloudSync.enabled || !cloudSync.initialized) return;
+      if (cloudSync.applyingRemoteState) return;
+
+      if (cloudSync.writeTimerId) {
+        clearTimeout(cloudSync.writeTimerId);
+      }
+
+      cloudSync.writeTimerId = setTimeout(() => {
+        void pushStateToCloud_();
+      }, 450);
+    }
+
+    async function pushStateToCloud_() {
+      if (!cloudSync.enabled || !cloudSync.initialized) return;
+      if (!cloudSync.firebaseApi || !cloudSync.cloudRef) return;
+      if (cloudSync.applyingRemoteState) return;
+
+      const payload = exportState_();
+      const signature = createStateSignature_(payload);
+      if (!signature) return;
+      if (signature === cloudSync.lastSnapshotSignature) return;
+
+      const previousSignature = cloudSync.lastSnapshotSignature;
+      const updatedAt = localStateUpdatedAt || new Date().toISOString();
+
+      try {
+        cloudSync.lastSnapshotSignature = signature;
+        await cloudSync.firebaseApi.setDoc(
+          cloudSync.cloudRef,
+          { state: payload, updatedAt: updatedAt },
+          { merge: true }
+        );
+      } catch (error) {
+        cloudSync.lastSnapshotSignature = previousSignature;
+        console.error('No se pudo guardar en Firestore:', error);
+        scheduleCloudWrite_();
+      }
     }
 
     function setupTabs() {
