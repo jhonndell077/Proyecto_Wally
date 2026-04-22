@@ -1,0 +1,954 @@
+﻿const CONFIG = {
+  SHEETS: {
+    INGRESOS: 'Ingresos',
+    GASTOS: 'Gastos',
+    CXC: 'Cuentas por Cobrar',
+    RESUMEN: 'Resumen',
+    HIST_INGRESOS: 'Historial Ingresos',
+    HIST_GASTOS: 'Historial Gastos',
+  },
+  COLS: {
+    INGRESOS: {
+      FECHA: 1,
+      TIPO_VENTA: 2,
+      DESCRIPCION: 3,
+      METODO: 4,
+      MONTO: 5,
+      COBRADO: 6,
+      MAX: 6,
+      SYS_ID: 7,
+      SYS_LAST_HIST_ESTADO: 8,
+    },
+    GASTOS: {
+      FECHA: 1,
+      TIPO_GASTO: 2,
+      DESCRIPCION: 3,
+      METODO: 4,
+      MONTO: 5,
+      MAX: 5,
+      SYS_ID: 6,
+      SYS_HIST_OK: 7,
+    },
+    CXC: {
+      FECHA: 1,
+      TIPO_VENTA: 2,
+      DESCRIPCION: 3,
+      MONTO: 4,
+      FECHA_COBRO: 5,
+      ESTADO: 6,
+      MAX: 6,
+      SYS_INGRESO_ID: 7,
+    },
+    HIST_INGRESOS: {
+      TIMESTAMP: 1,
+      FECHA: 2,
+      TIPO_VENTA: 3,
+      DESCRIPCION: 4,
+      METODO: 5,
+      MONTO: 6,
+      COBRADO: 7,
+      ORIGEN: 8,
+      MAX: 8,
+      SYS_EVENT_ID: 9,
+    },
+    HIST_GASTOS: {
+      TIMESTAMP: 1,
+      FECHA: 2,
+      TIPO_GASTO: 3,
+      DESCRIPCION: 4,
+      METODO: 5,
+      MONTO: 6,
+      ORIGEN: 7,
+      MAX: 7,
+      SYS_EVENT_ID: 8,
+    },
+  },
+  ESTADO: { SI: 'si', NO: 'no' },
+  CACHE_TTL_SECONDS: 5,
+};
+
+function onOpen() {
+  ensureSheetsAndHeaders_();
+  hideSystemColumns_();
+  try {
+    removeInstallableOnEditTriggers_();
+  } catch (err) {
+    // Si no hay permisos aun, no bloquea el menu.
+  }
+
+  SpreadsheetApp.getUi()
+    .createMenu('Acceso rapido')
+    .addItem('Nuevo ingreso', 'abrirFormularioIngreso')
+    .addItem('Nuevo gasto', 'abrirFormularioGasto')
+    .addSeparator()
+    .addItem('Ir a Historial Ingresos', 'irHistorialIngresos')
+    .addItem('Ir a Historial Gastos', 'irHistorialGastos')
+    .addSeparator()
+    .addItem('Recalcular todo', 'recalcularTodo')
+    .addToUi();
+}
+
+function onEdit(e) {
+  if (!e || !e.range) return;
+
+  const sh = e.range.getSheet();
+  const sheetName = sh.getName();
+  const managedSheets = [CONFIG.SHEETS.INGRESOS, CONFIG.SHEETS.GASTOS, CONFIG.SHEETS.CXC];
+
+  if (managedSheets.indexOf(sheetName) === -1) return;
+  if (e.range.getLastRow() < 2) return;
+  if (isDuplicateEditEvent_(e)) return;
+
+  const lock = LockService.getDocumentLock();
+  if (!lock.tryLock(30000)) return;
+
+  try {
+    ensureSheetsAndHeaders_();
+
+    if (sheetName === CONFIG.SHEETS.INGRESOS) {
+      procesarEdicionIngresos_(e);
+    } else if (sheetName === CONFIG.SHEETS.GASTOS) {
+      procesarEdicionGastos_(e);
+    } else if (sheetName === CONFIG.SHEETS.CXC) {
+      procesarEdicionCxC_(e);
+    }
+
+    sincronizarCxC_();
+    actualizarResumen_();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function abrirFormularioIngreso() {
+  const html = HtmlService.createHtmlOutput(getIngresoFormHtml_())
+    .setWidth(430)
+    .setHeight(560);
+  SpreadsheetApp.getUi().showModalDialog(html, 'Nuevo ingreso');
+}
+
+function abrirFormularioGasto() {
+  const html = HtmlService.createHtmlOutput(getGastoFormHtml_())
+    .setWidth(430)
+    .setHeight(500);
+  SpreadsheetApp.getUi().showModalDialog(html, 'Nuevo gasto');
+}
+
+function getIngresoFormHtml_() {
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body { font-family: Arial, sans-serif; padding: 14px; }
+    h3 { margin: 0 0 12px 0; }
+    label { display:block; margin: 10px 0 4px; font-weight: 600; }
+    input, select { width:100%; padding:8px; box-sizing:border-box; }
+    button { width:100%; margin-top:16px; padding:10px; border:0; border-radius:6px; background:#0b8043; color:#fff; cursor:pointer; }
+    .small { font-size:12px; color:#666; margin-top:8px; }
+  </style>
+</head>
+<body>
+  <h3>Registrar ingreso</h3>
+
+  <label>A) Fecha</label>
+  <input id="fecha" type="date">
+
+  <label>B) Tipo de venta</label>
+  <input id="tipoVenta" type="text">
+
+  <label>C) Descripcion</label>
+  <input id="descripcion" type="text">
+
+  <label>D) Metodo de pago</label>
+  <input id="metodoPago" type="text">
+
+  <label>E) Monto</label>
+  <input id="monto" type="text" placeholder="Ej: 1500 o 1,500.00">
+
+  <label>F) Cobrado (Si/No)</label>
+  <select id="cobrado">
+    <option>Si</option>
+    <option>No</option>
+  </select>
+
+  <button onclick="enviar()">Ejecutar</button>
+  <div class="small">Se guarda en Ingresos y en Historial Ingresos.</div>
+
+  <script>
+    function enviar() {
+      var payload = {
+        fecha: document.getElementById('fecha').value,
+        tipoVenta: document.getElementById('tipoVenta').value,
+        descripcion: document.getElementById('descripcion').value,
+        metodoPago: document.getElementById('metodoPago').value,
+        monto: document.getElementById('monto').value,
+        cobrado: document.getElementById('cobrado').value
+      };
+
+      if (!payload.fecha || !payload.tipoVenta || !payload.descripcion || !payload.metodoPago || !payload.monto) {
+        alert('Completa todos los campos.');
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(function(msg) {
+          alert(msg);
+          google.script.host.close();
+        })
+        .withFailureHandler(function(err) {
+          alert(err.message || err);
+        })
+        .registrarIngreso(payload);
+    }
+  </script>
+</body>
+</html>`;
+}
+
+function getGastoFormHtml_() {
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body { font-family: Arial, sans-serif; padding: 14px; }
+    h3 { margin: 0 0 12px 0; }
+    label { display:block; margin: 10px 0 4px; font-weight: 600; }
+    input { width:100%; padding:8px; box-sizing:border-box; }
+    button { width:100%; margin-top:16px; padding:10px; border:0; border-radius:6px; background:#1a73e8; color:#fff; cursor:pointer; }
+    .small { font-size:12px; color:#666; margin-top:8px; }
+  </style>
+</head>
+<body>
+  <h3>Registrar gasto</h3>
+
+  <label>A) Fecha</label>
+  <input id="fecha" type="date">
+
+  <label>B) Tipo de gasto</label>
+  <input id="tipoGasto" type="text">
+
+  <label>C) Descripcion</label>
+  <input id="descripcion" type="text">
+
+  <label>D) Metodo de pago</label>
+  <input id="metodoPago" type="text">
+
+  <label>E) Monto</label>
+  <input id="monto" type="text" placeholder="Ej: 1500 o 1,500.00">
+
+  <button onclick="enviar()">Ejecutar</button>
+  <div class="small">Se guarda en Gastos y en Historial Gastos.</div>
+
+  <script>
+    function enviar() {
+      var payload = {
+        fecha: document.getElementById('fecha').value,
+        tipoGasto: document.getElementById('tipoGasto').value,
+        descripcion: document.getElementById('descripcion').value,
+        metodoPago: document.getElementById('metodoPago').value,
+        monto: document.getElementById('monto').value
+      };
+
+      if (!payload.fecha || !payload.tipoGasto || !payload.descripcion || !payload.metodoPago || !payload.monto) {
+        alert('Completa todos los campos.');
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(function(msg) {
+          alert(msg);
+          google.script.host.close();
+        })
+        .withFailureHandler(function(err) {
+          alert(err.message || err);
+        })
+        .registrarGasto(payload);
+    }
+  </script>
+</body>
+</html>`;
+}
+
+function registrarIngreso(payload) {
+  ensureSheetsAndHeaders_();
+
+  const fecha = parseDate_(payload.fecha);
+  const monto = toNumber_(payload.monto);
+  const estadoNorm = normalizeEstado_(payload.cobrado);
+
+  if (!fecha) throw new Error('Fecha invalida.');
+  if (!(monto > 0)) throw new Error('Monto invalido.');
+  if (estadoNorm !== CONFIG.ESTADO.SI && estadoNorm !== CONFIG.ESTADO.NO) throw new Error('Estado invalido. Usa Si o No.');
+
+  const estadoTexto = estadoNorm === CONFIG.ESTADO.SI ? 'Si' : 'No';
+  const rowMain = [
+    fecha,
+    clean_(payload.tipoVenta),
+    clean_(payload.descripcion),
+    clean_(payload.metodoPago),
+    monto,
+    estadoTexto,
+  ];
+
+  const rowNum = appendRow_(CONFIG.SHEETS.INGRESOS, rowMain, { dateCols: [1], amountCols: [5] });
+  const shIng = ensureSheet_(CONFIG.SHEETS.INGRESOS);
+
+  const ingresoId = ensureIngresoIdAtRow_(shIng, rowNum);
+  setIngresoLastHistEstadoAtRow_(shIng, rowNum, estadoNorm);
+
+  appendHistIngreso_(rowMain, 'Boton ingreso', ingresoId);
+
+  recalcularTodo();
+  return 'Ingreso registrado correctamente.';
+}
+
+function registrarGasto(payload) {
+  ensureSheetsAndHeaders_();
+
+  const fecha = parseDate_(payload.fecha);
+  const monto = toNumber_(payload.monto);
+
+  if (!fecha) throw new Error('Fecha invalida.');
+  if (!(monto > 0)) throw new Error('Monto invalido.');
+
+  const rowMain = [
+    fecha,
+    clean_(payload.tipoGasto),
+    clean_(payload.descripcion),
+    clean_(payload.metodoPago),
+    monto,
+  ];
+
+  const rowNum = appendRow_(CONFIG.SHEETS.GASTOS, rowMain, { dateCols: [1], amountCols: [5] });
+  const shGas = ensureSheet_(CONFIG.SHEETS.GASTOS);
+
+  const gastoId = ensureGastoIdAtRow_(shGas, rowNum);
+  shGas.getRange(rowNum, CONFIG.COLS.GASTOS.SYS_HIST_OK).setValue('1');
+
+  appendHistGasto_(rowMain, 'Boton gasto', gastoId);
+
+  recalcularTodo();
+  return 'Gasto registrado correctamente.';
+}
+
+function recalcularTodo() {
+  const lock = LockService.getDocumentLock();
+  if (!lock.tryLock(30000)) return;
+
+  try {
+    ensureSheetsAndHeaders_();
+    sincronizarCxC_();
+    actualizarResumen_();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function procesarEdicionIngresos_(e) {
+  const sh = e.range.getSheet();
+  if (!rangeIntersectsCols_(e.range, 1, CONFIG.COLS.INGRESOS.SYS_LAST_HIST_ESTADO)) return;
+
+  const rowStart = Math.max(2, e.range.getRow());
+  const rowEnd = e.range.getLastRow();
+
+  for (let r = rowStart; r <= rowEnd; r++) {
+    const row = sh.getRange(r, 1, 1, CONFIG.COLS.INGRESOS.SYS_LAST_HIST_ESTADO).getValues()[0];
+    const visible = row.slice(0, CONFIG.COLS.INGRESOS.MAX);
+
+    if (!rowHasAnyValue_(visible)) {
+      sh.getRange(r, CONFIG.COLS.INGRESOS.SYS_ID, 1, 2).clearContent();
+      continue;
+    }
+
+    if (!isIngresoCompleto_(row)) continue;
+
+    const estadoActual = normalizeEstado_(row[CONFIG.COLS.INGRESOS.COBRADO - 1]);
+    if (estadoActual !== CONFIG.ESTADO.SI && estadoActual !== CONFIG.ESTADO.NO) continue;
+
+    const ultimoHistEstado = normalizeEstado_(row[CONFIG.COLS.INGRESOS.SYS_LAST_HIST_ESTADO - 1]);
+    if (ultimoHistEstado === estadoActual) continue;
+
+    const ingresoId = ensureIngresoIdAtRow_(sh, r, row);
+    appendHistIngreso_(row, 'Ingresos', ingresoId);
+    setIngresoLastHistEstadoAtRow_(sh, r, estadoActual);
+  }
+}
+
+function procesarEdicionGastos_(e) {
+  const sh = e.range.getSheet();
+  if (!rangeIntersectsCols_(e.range, 1, CONFIG.COLS.GASTOS.SYS_HIST_OK)) return;
+
+  const rowStart = Math.max(2, e.range.getRow());
+  const rowEnd = e.range.getLastRow();
+
+  for (let r = rowStart; r <= rowEnd; r++) {
+    const row = sh.getRange(r, 1, 1, CONFIG.COLS.GASTOS.SYS_HIST_OK).getValues()[0];
+    const visible = row.slice(0, CONFIG.COLS.GASTOS.MAX);
+
+    if (!rowHasAnyValue_(visible)) {
+      sh.getRange(r, CONFIG.COLS.GASTOS.SYS_ID, 1, 2).clearContent();
+      continue;
+    }
+
+    if (!isGastoCompleto_(row)) continue;
+
+    const histOk = clean_(row[CONFIG.COLS.GASTOS.SYS_HIST_OK - 1]) === '1';
+    if (histOk) continue;
+
+    const gastoId = ensureGastoIdAtRow_(sh, r, row);
+    appendHistGasto_(row, 'Gastos', gastoId);
+    sh.getRange(r, CONFIG.COLS.GASTOS.SYS_HIST_OK).setValue('1');
+  }
+}
+
+function procesarEdicionCxC_(e) {
+  const shCxC = e.range.getSheet();
+  if (!rangeIntersectsCols_(e.range, CONFIG.COLS.CXC.ESTADO, CONFIG.COLS.CXC.ESTADO)) return;
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const shIng = ss.getSheetByName(CONFIG.SHEETS.INGRESOS);
+  if (!shIng) return;
+
+  const rowStart = Math.max(2, e.range.getRow());
+  const rowEnd = e.range.getLastRow();
+
+  for (let r = rowStart; r <= rowEnd; r++) {
+    const cxcRow = shCxC.getRange(r, 1, 1, CONFIG.COLS.CXC.SYS_INGRESO_ID).getValues()[0];
+    if (!rowHasAnyValue_(cxcRow.slice(0, CONFIG.COLS.CXC.MAX))) continue;
+
+    const estado = normalizeEstado_(cxcRow[CONFIG.COLS.CXC.ESTADO - 1]);
+    if (estado !== CONFIG.ESTADO.SI) continue;
+
+    const ingresoFound = findIngresoForCxCRow_(shIng, cxcRow);
+    if (!ingresoFound) continue;
+
+    const ingresoRow = ingresoFound.rowValues;
+    const ingresoId = ensureIngresoIdAtRow_(shIng, ingresoFound.rowIndex, ingresoRow);
+
+    const estadoIngreso = normalizeEstado_(ingresoRow[CONFIG.COLS.INGRESOS.COBRADO - 1]);
+    if (estadoIngreso !== CONFIG.ESTADO.SI) {
+      shIng.getRange(ingresoFound.rowIndex, CONFIG.COLS.INGRESOS.COBRADO).setValue('Si');
+      ingresoRow[CONFIG.COLS.INGRESOS.COBRADO - 1] = 'Si';
+    }
+
+    appendHistIngreso_(ingresoRow, 'Cuentas por Cobrar', ingresoId);
+    setIngresoLastHistEstadoAtRow_(shIng, ingresoFound.rowIndex, CONFIG.ESTADO.SI);
+  }
+}
+
+function findIngresoForCxCRow_(shIng, cxcRow) {
+  const ingresoId = clean_(cxcRow[CONFIG.COLS.CXC.SYS_INGRESO_ID - 1]);
+
+  if (ingresoId) {
+    const foundById = findIngresoById_(shIng, ingresoId);
+    if (foundById) return foundById;
+  }
+
+  const targetKey = buildKey_(
+    cxcRow[CONFIG.COLS.CXC.FECHA - 1],
+    cxcRow[CONFIG.COLS.CXC.TIPO_VENTA - 1],
+    cxcRow[CONFIG.COLS.CXC.DESCRIPCION - 1],
+    cxcRow[CONFIG.COLS.CXC.MONTO - 1]
+  );
+
+  const lr = shIng.getLastRow();
+  if (lr < 2) return null;
+
+  const rows = shIng.getRange(2, 1, lr - 1, CONFIG.COLS.INGRESOS.SYS_LAST_HIST_ESTADO).getValues();
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    if (!rowHasAnyValue_(row.slice(0, CONFIG.COLS.INGRESOS.MAX))) continue;
+
+    const rowKey = buildKey_(
+      row[CONFIG.COLS.INGRESOS.FECHA - 1],
+      row[CONFIG.COLS.INGRESOS.TIPO_VENTA - 1],
+      row[CONFIG.COLS.INGRESOS.DESCRIPCION - 1],
+      row[CONFIG.COLS.INGRESOS.MONTO - 1]
+    );
+
+    if (rowKey === targetKey) {
+      return { rowIndex: i + 2, rowValues: row };
+    }
+  }
+
+  return null;
+}
+
+function findIngresoById_(shIng, ingresoId) {
+  const lr = shIng.getLastRow();
+  if (lr < 2) return null;
+
+  const ids = shIng.getRange(2, CONFIG.COLS.INGRESOS.SYS_ID, lr - 1, 1).getValues();
+  for (let i = 0; i < ids.length; i++) {
+    if (clean_(ids[i][0]) !== ingresoId) continue;
+
+    const rowValues = shIng.getRange(i + 2, 1, 1, CONFIG.COLS.INGRESOS.SYS_LAST_HIST_ESTADO).getValues()[0];
+    return { rowIndex: i + 2, rowValues: rowValues };
+  }
+
+  return null;
+}
+
+function appendHistIngreso_(rowIngreso, origen, ingresoId) {
+  const estadoNorm = normalizeEstado_(rowIngreso[CONFIG.COLS.INGRESOS.COBRADO - 1]);
+  if (estadoNorm !== CONFIG.ESTADO.SI && estadoNorm !== CONFIG.ESTADO.NO) return;
+
+  const estadoTexto = estadoNorm === CONFIG.ESTADO.SI ? 'Si' : 'No';
+  const eventId = 'ING|' + clean_(ingresoId) + '|' + estadoTexto + '|' + Utilities.getUuid();
+
+  const rowHist = [
+    new Date(),
+    rowIngreso[CONFIG.COLS.INGRESOS.FECHA - 1],
+    clean_(rowIngreso[CONFIG.COLS.INGRESOS.TIPO_VENTA - 1]),
+    clean_(rowIngreso[CONFIG.COLS.INGRESOS.DESCRIPCION - 1]),
+    clean_(rowIngreso[CONFIG.COLS.INGRESOS.METODO - 1]),
+    toNumber_(rowIngreso[CONFIG.COLS.INGRESOS.MONTO - 1]),
+    estadoTexto,
+    origen,
+    eventId,
+  ];
+
+  appendRow_(CONFIG.SHEETS.HIST_INGRESOS, rowHist, {
+    dateTimeCols: [CONFIG.COLS.HIST_INGRESOS.TIMESTAMP],
+    dateCols: [CONFIG.COLS.HIST_INGRESOS.FECHA],
+    amountCols: [CONFIG.COLS.HIST_INGRESOS.MONTO],
+  });
+}
+
+function appendHistGasto_(rowGasto, origen, gastoId) {
+  const eventId = 'GAS|' + clean_(gastoId) + '|' + Utilities.getUuid();
+
+  const rowHist = [
+    new Date(),
+    rowGasto[CONFIG.COLS.GASTOS.FECHA - 1],
+    clean_(rowGasto[CONFIG.COLS.GASTOS.TIPO_GASTO - 1]),
+    clean_(rowGasto[CONFIG.COLS.GASTOS.DESCRIPCION - 1]),
+    clean_(rowGasto[CONFIG.COLS.GASTOS.METODO - 1]),
+    toNumber_(rowGasto[CONFIG.COLS.GASTOS.MONTO - 1]),
+    origen,
+    eventId,
+  ];
+
+  appendRow_(CONFIG.SHEETS.HIST_GASTOS, rowHist, {
+    dateTimeCols: [CONFIG.COLS.HIST_GASTOS.TIMESTAMP],
+    dateCols: [CONFIG.COLS.HIST_GASTOS.FECHA],
+    amountCols: [CONFIG.COLS.HIST_GASTOS.MONTO],
+  });
+}
+
+function sincronizarCxC_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const shIng = ss.getSheetByName(CONFIG.SHEETS.INGRESOS);
+  const shCxC = ss.getSheetByName(CONFIG.SHEETS.CXC);
+  if (!shIng || !shCxC) return;
+
+  const ingresos = getDataRows_(shIng, CONFIG.COLS.INGRESOS.SYS_LAST_HIST_ESTADO);
+  const cxcActual = getDataRows_(shCxC, CONFIG.COLS.CXC.SYS_INGRESO_ID);
+
+  const fechaCobroById = {};
+  const fechaCobroByKey = {};
+
+  cxcActual.forEach((r) => {
+    if (!rowHasAnyValue_(r.slice(0, CONFIG.COLS.CXC.MAX))) return;
+
+    const ingresoId = clean_(r[CONFIG.COLS.CXC.SYS_INGRESO_ID - 1]);
+    const fechaCobro = r[CONFIG.COLS.CXC.FECHA_COBRO - 1];
+
+    if (ingresoId && fechaCobro) {
+      fechaCobroById[ingresoId] = fechaCobro;
+    }
+
+    const key = buildKey_(
+      r[CONFIG.COLS.CXC.FECHA - 1],
+      r[CONFIG.COLS.CXC.TIPO_VENTA - 1],
+      r[CONFIG.COLS.CXC.DESCRIPCION - 1],
+      r[CONFIG.COLS.CXC.MONTO - 1]
+    );
+    if (fechaCobro) {
+      fechaCobroByKey[key] = fechaCobro;
+    }
+  });
+
+  const pendientes = [];
+
+  for (let i = 0; i < ingresos.length; i++) {
+    const row = ingresos[i];
+    if (!isIngresoCompleto_(row)) continue;
+
+    const estado = normalizeEstado_(row[CONFIG.COLS.INGRESOS.COBRADO - 1]);
+    if (estado !== CONFIG.ESTADO.NO) continue;
+
+    const rowIndex = i + 2;
+    const ingresoId = ensureIngresoIdAtRow_(shIng, rowIndex, row);
+
+    let fechaCobro = '';
+    if (fechaCobroById[ingresoId]) {
+      fechaCobro = fechaCobroById[ingresoId];
+    } else {
+      const key = buildKey_(
+        row[CONFIG.COLS.INGRESOS.FECHA - 1],
+        row[CONFIG.COLS.INGRESOS.TIPO_VENTA - 1],
+        row[CONFIG.COLS.INGRESOS.DESCRIPCION - 1],
+        row[CONFIG.COLS.INGRESOS.MONTO - 1]
+      );
+      if (fechaCobroByKey[key]) {
+        fechaCobro = fechaCobroByKey[key];
+      }
+    }
+
+    pendientes.push([
+      row[CONFIG.COLS.INGRESOS.FECHA - 1],
+      row[CONFIG.COLS.INGRESOS.TIPO_VENTA - 1],
+      row[CONFIG.COLS.INGRESOS.DESCRIPCION - 1],
+      toNumber_(row[CONFIG.COLS.INGRESOS.MONTO - 1]),
+      fechaCobro,
+      'No',
+      ingresoId,
+    ]);
+  }
+
+  clearBelowHeader_(shCxC, CONFIG.COLS.CXC.SYS_INGRESO_ID);
+
+  if (pendientes.length > 0) {
+    shCxC.getRange(2, 1, pendientes.length, CONFIG.COLS.CXC.SYS_INGRESO_ID).setValues(pendientes);
+    shCxC.getRange(2, CONFIG.COLS.CXC.FECHA, pendientes.length, 1).setNumberFormat('d/m/yyyy');
+    shCxC.getRange(2, CONFIG.COLS.CXC.MONTO, pendientes.length, 1).setNumberFormat('#,##0.00');
+    shCxC.getRange(2, CONFIG.COLS.CXC.FECHA_COBRO, pendientes.length, 1).setNumberFormat('d/m/yyyy');
+  }
+}
+
+function actualizarResumen_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const shIng = ss.getSheetByName(CONFIG.SHEETS.INGRESOS);
+  const shGas = ss.getSheetByName(CONFIG.SHEETS.GASTOS);
+  const shRes = ss.getSheetByName(CONFIG.SHEETS.RESUMEN);
+  if (!shIng || !shGas || !shRes) return;
+
+  const ingresos = getDataRows_(shIng, CONFIG.COLS.INGRESOS.MAX);
+  const gastos = getDataRows_(shGas, CONFIG.COLS.GASTOS.MAX);
+
+  let totalIngresosCobrados = 0;
+  let totalGastos = 0;
+  let totalPorCobrar = 0;
+
+  ingresos.forEach((r) => {
+    if (!rowHasAnyValue_(r)) return;
+
+    const monto = toNumber_(r[CONFIG.COLS.INGRESOS.MONTO - 1]);
+    const estado = normalizeEstado_(r[CONFIG.COLS.INGRESOS.COBRADO - 1]);
+
+    if (estado === CONFIG.ESTADO.SI) {
+      totalIngresosCobrados += monto;
+    } else if (estado === CONFIG.ESTADO.NO) {
+      totalPorCobrar += monto;
+    }
+  });
+
+  gastos.forEach((r) => {
+    if (!rowHasAnyValue_(r)) return;
+    totalGastos += toNumber_(r[CONFIG.COLS.GASTOS.MONTO - 1]);
+  });
+
+  shRes.getRange('A3:C3').setValues([[totalIngresosCobrados, totalGastos, totalPorCobrar]]);
+  shRes.getRange('A3:C3').setNumberFormat('#,##0.00');
+}
+
+function irHistorialIngresos() {
+  goToSheet_(CONFIG.SHEETS.HIST_INGRESOS);
+}
+
+function irHistorialGastos() {
+  goToSheet_(CONFIG.SHEETS.HIST_GASTOS);
+}
+
+function goToSheet_(name) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(name);
+  if (sh) ss.setActiveSheet(sh);
+}
+
+function ensureSheetsAndHeaders_() {
+  const shIngresos = ensureSheetWithHeaders_(CONFIG.SHEETS.INGRESOS, ['Fecha', 'Tipo de venta', 'Descripcion', 'Metodo de pago', 'Monto', 'Cobrado (Si/No)']);
+  const shGastos = ensureSheetWithHeaders_(CONFIG.SHEETS.GASTOS, ['Fecha', 'Tipo de gasto', 'Descripcion', 'Metodo de pago', 'Monto']);
+  const shCxC = ensureSheetWithHeaders_(CONFIG.SHEETS.CXC, ['Fecha', 'Tipo de venta', 'Descripcion', 'Monto', 'Fecha de cobro', 'Estado']);
+  ensureSheet_(CONFIG.SHEETS.RESUMEN);
+  const shHistIng = ensureSheetWithHeaders_(CONFIG.SHEETS.HIST_INGRESOS, ['Timestamp', 'Fecha', 'Tipo de venta', 'Descripcion', 'Metodo de pago', 'Monto', 'Cobrado (Si/No)', 'Origen']);
+  const shHistGas = ensureSheetWithHeaders_(CONFIG.SHEETS.HIST_GASTOS, ['Timestamp', 'Fecha', 'Tipo de gasto', 'Descripcion', 'Metodo de pago', 'Monto', 'Origen']);
+
+  ensureSystemColumnHeader_(shIngresos, CONFIG.COLS.INGRESOS.SYS_ID, '_SYS_ID');
+  ensureSystemColumnHeader_(shIngresos, CONFIG.COLS.INGRESOS.SYS_LAST_HIST_ESTADO, '_SYS_LAST_HIST_ESTADO');
+
+  ensureSystemColumnHeader_(shGastos, CONFIG.COLS.GASTOS.SYS_ID, '_SYS_ID');
+  ensureSystemColumnHeader_(shGastos, CONFIG.COLS.GASTOS.SYS_HIST_OK, '_SYS_HIST_OK');
+
+  ensureSystemColumnHeader_(shCxC, CONFIG.COLS.CXC.SYS_INGRESO_ID, '_SYS_INGRESO_ID');
+
+  ensureSystemColumnHeader_(shHistIng, CONFIG.COLS.HIST_INGRESOS.SYS_EVENT_ID, '_SYS_EVENT_ID');
+  ensureSystemColumnHeader_(shHistGas, CONFIG.COLS.HIST_GASTOS.SYS_EVENT_ID, '_SYS_EVENT_ID');
+
+  hideSystemColumns_();
+}
+
+function ensureSheet_(name) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(name);
+  if (!sh) sh = ss.insertSheet(name);
+  return sh;
+}
+
+function ensureSheetWithHeaders_(name, headers) {
+  const sh = ensureSheet_(name);
+  const current = sh.getRange(1, 1, 1, headers.length).getValues()[0];
+  const isEmpty = current.every((v) => clean_(v) === '');
+  if (isEmpty) sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+  return sh;
+}
+
+function ensureSystemColumnHeader_(sheet, col, header) {
+  const cell = sheet.getRange(1, col);
+  const current = clean_(cell.getValue());
+  if (!current) {
+    cell.setValue(header);
+  }
+}
+
+function hideSystemColumns_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  hideColumnsSafe_(ss.getSheetByName(CONFIG.SHEETS.INGRESOS), CONFIG.COLS.INGRESOS.SYS_ID, 2);
+  hideColumnsSafe_(ss.getSheetByName(CONFIG.SHEETS.GASTOS), CONFIG.COLS.GASTOS.SYS_ID, 2);
+  hideColumnsSafe_(ss.getSheetByName(CONFIG.SHEETS.CXC), CONFIG.COLS.CXC.SYS_INGRESO_ID, 1);
+  hideColumnsSafe_(ss.getSheetByName(CONFIG.SHEETS.HIST_INGRESOS), CONFIG.COLS.HIST_INGRESOS.SYS_EVENT_ID, 1);
+  hideColumnsSafe_(ss.getSheetByName(CONFIG.SHEETS.HIST_GASTOS), CONFIG.COLS.HIST_GASTOS.SYS_EVENT_ID, 1);
+}
+
+function hideColumnsSafe_(sheet, startCol, count) {
+  if (!sheet) return;
+  try {
+    sheet.hideColumns(startCol, count);
+  } catch (err) {
+    // Ignorar errores de visualizacion.
+  }
+}
+
+function removeInstallableOnEditTriggers_() {
+  const triggers = ScriptApp.getProjectTriggers();
+  triggers.forEach((t) => {
+    if (t.getHandlerFunction && t.getHandlerFunction() === 'onEdit') {
+      ScriptApp.deleteTrigger(t);
+    }
+  });
+}
+
+function appendRow_(sheetName, row, fmt) {
+  const sh = ensureSheet_(sheetName);
+  sh.appendRow(row);
+  const lr = sh.getLastRow();
+
+  if (fmt && fmt.dateTimeCols) fmt.dateTimeCols.forEach((c) => sh.getRange(lr, c).setNumberFormat('d/m/yyyy hh:mm:ss'));
+  if (fmt && fmt.dateCols) fmt.dateCols.forEach((c) => sh.getRange(lr, c).setNumberFormat('d/m/yyyy'));
+  if (fmt && fmt.amountCols) fmt.amountCols.forEach((c) => sh.getRange(lr, c).setNumberFormat('#,##0.00'));
+
+  return lr;
+}
+
+function getDataRows_(sheet, numCols) {
+  const lr = sheet.getLastRow();
+  if (lr < 2) return [];
+  return sheet.getRange(2, 1, lr - 1, numCols).getValues();
+}
+
+function clearBelowHeader_(sheet, numCols) {
+  const lr = sheet.getLastRow();
+  if (lr < 2) return;
+  sheet.getRange(2, 1, lr - 1, numCols).clearContent();
+}
+
+function ensureIngresoIdAtRow_(sheet, rowIndex, rowValues) {
+  let id = '';
+  if (rowValues && rowValues.length >= CONFIG.COLS.INGRESOS.SYS_ID) {
+    id = clean_(rowValues[CONFIG.COLS.INGRESOS.SYS_ID - 1]);
+  }
+  if (!id) {
+    id = 'ING-' + Utilities.getUuid();
+    sheet.getRange(rowIndex, CONFIG.COLS.INGRESOS.SYS_ID).setValue(id);
+  }
+  return id;
+}
+
+function ensureGastoIdAtRow_(sheet, rowIndex, rowValues) {
+  let id = '';
+  if (rowValues && rowValues.length >= CONFIG.COLS.GASTOS.SYS_ID) {
+    id = clean_(rowValues[CONFIG.COLS.GASTOS.SYS_ID - 1]);
+  }
+  if (!id) {
+    id = 'GAS-' + Utilities.getUuid();
+    sheet.getRange(rowIndex, CONFIG.COLS.GASTOS.SYS_ID).setValue(id);
+  }
+  return id;
+}
+
+function setIngresoLastHistEstadoAtRow_(sheet, rowIndex, estadoNorm) {
+  const estadoTexto = estadoNorm === CONFIG.ESTADO.SI ? 'Si' : 'No';
+  sheet.getRange(rowIndex, CONFIG.COLS.INGRESOS.SYS_LAST_HIST_ESTADO).setValue(estadoTexto);
+}
+
+function isDuplicateEditEvent_(e) {
+  try {
+    const cache = CacheService.getDocumentCache();
+    const sh = e.range.getSheet();
+
+    const parts = [
+      'EDIT',
+      sh.getSheetId(),
+      e.range.getRow(),
+      e.range.getColumn(),
+      e.range.getNumRows(),
+      e.range.getNumColumns(),
+      clean_(e.oldValue),
+      clean_(e.value),
+    ];
+
+    const key = parts.join('|').substring(0, 250);
+    if (cache.get(key)) return true;
+
+    cache.put(key, '1', CONFIG.CACHE_TTL_SECONDS);
+  } catch (err) {
+    // Si falla cache, no bloquea la ejecucion.
+  }
+
+  return false;
+}
+
+function rowHasAnyValue_(row) {
+  for (let i = 0; i < row.length; i++) {
+    const v = row[i];
+    if (v === null || v === '') continue;
+    if (typeof v === 'string' && v.trim() === '') continue;
+    return true;
+  }
+  return false;
+}
+
+function isIngresoCompleto_(row) {
+  if (!rowHasAnyValue_(row.slice(0, CONFIG.COLS.INGRESOS.MAX))) return false;
+  if (!parseDate_(row[CONFIG.COLS.INGRESOS.FECHA - 1])) return false;
+  if (!clean_(row[CONFIG.COLS.INGRESOS.TIPO_VENTA - 1])) return false;
+  if (!clean_(row[CONFIG.COLS.INGRESOS.DESCRIPCION - 1])) return false;
+  if (!clean_(row[CONFIG.COLS.INGRESOS.METODO - 1])) return false;
+  if (!(toNumber_(row[CONFIG.COLS.INGRESOS.MONTO - 1]) > 0)) return false;
+
+  const estado = normalizeEstado_(row[CONFIG.COLS.INGRESOS.COBRADO - 1]);
+  return estado === CONFIG.ESTADO.SI || estado === CONFIG.ESTADO.NO;
+}
+
+function isGastoCompleto_(row) {
+  if (!rowHasAnyValue_(row.slice(0, CONFIG.COLS.GASTOS.MAX))) return false;
+  if (!parseDate_(row[CONFIG.COLS.GASTOS.FECHA - 1])) return false;
+  if (!clean_(row[CONFIG.COLS.GASTOS.TIPO_GASTO - 1])) return false;
+  if (!clean_(row[CONFIG.COLS.GASTOS.DESCRIPCION - 1])) return false;
+  if (!clean_(row[CONFIG.COLS.GASTOS.METODO - 1])) return false;
+  if (!(toNumber_(row[CONFIG.COLS.GASTOS.MONTO - 1]) > 0)) return false;
+
+  return true;
+}
+
+function rangeIntersectsCols_(range, colStart, colEnd) {
+  const rangeStart = range.getColumn();
+  const rangeEnd = range.getLastColumn();
+  return rangeStart <= colEnd && rangeEnd >= colStart;
+}
+
+function parseDate_(v) {
+  if (Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v.getTime())) {
+    return new Date(v.getFullYear(), v.getMonth(), v.getDate());
+  }
+
+  const s = clean_(v);
+  if (!s) return null;
+
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) return safeDate_(Number(m[1]), Number(m[2]), Number(m[3]));
+
+  m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (m) return safeDate_(Number(m[3]), Number(m[2]), Number(m[1]));
+
+  m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2})$/);
+  if (m) {
+    const yy = Number(m[3]);
+    const yyyy = yy >= 70 ? 1900 + yy : 2000 + yy;
+    return safeDate_(yyyy, Number(m[2]), Number(m[1]));
+  }
+
+  return null;
+}
+
+function safeDate_(year, month, day) {
+  const d = new Date(year, month - 1, day);
+  if (d.getFullYear() !== year || d.getMonth() !== month - 1 || d.getDate() !== day) return null;
+  return d;
+}
+
+function normalizeEstado_(v) {
+  const s = String(v == null ? '' : v)
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+  if (s === 'si') return 'si';
+  if (s === 'no') return 'no';
+  return s;
+}
+
+function toNumber_(v) {
+  if (typeof v === 'number') return isFinite(v) ? v : 0;
+
+  const s = String(v == null ? '' : v).trim();
+  if (!s) return 0;
+
+  let n = s.replace(/[^\d,\.\-]/g, '').replace(/\s/g, '');
+  const hasComma = n.indexOf(',') !== -1;
+  const hasDot = n.indexOf('.') !== -1;
+
+  if (hasComma && hasDot) {
+    const lastComma = n.lastIndexOf(',');
+    const lastDot = n.lastIndexOf('.');
+    n = lastComma > lastDot ? n.replace(/\./g, '').replace(',', '.') : n.replace(/,/g, '');
+  } else if (hasComma && !hasDot) {
+    n = n.replace(/\./g, '').replace(',', '.');
+  } else {
+    n = n.replace(/,/g, '');
+  }
+
+  const out = Number(n);
+  return isFinite(out) ? out : 0;
+}
+
+function buildKey_(fecha, tipoVenta, descripcion, monto) {
+  return [
+    dateKey_(fecha),
+    clean_(tipoVenta).toLowerCase(),
+    clean_(descripcion).toLowerCase(),
+    toNumber_(monto).toFixed(2),
+  ].join('|');
+}
+
+function dateKey_(v) {
+  const d = parseDate_(v);
+  if (d) {
+    const y = d.getFullYear();
+    const m = ('0' + (d.getMonth() + 1)).slice(-2);
+    const day = ('0' + d.getDate()).slice(-2);
+    return y + '-' + m + '-' + day;
+  }
+  return clean_(v);
+}
+
+function clean_(v) {
+  return String(v == null ? '' : v).trim();
+}

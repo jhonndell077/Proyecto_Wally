@@ -1,0 +1,1345 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Control Financiero / Inventario</title>
+  <style>
+    :root {
+      --bg: #f3f5f7;
+      --card: #ffffff;
+      --line: #d5d9df;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --green: #0f7a4b;
+      --blue: #2d6cdf;
+      --header: #315f4c;
+      --header-blue: #8fa7d6;
+      --danger: #d92f2f;
+      --ok: #0fbf6a;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Calibri, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .app {
+      width: min(98vw, 1800px);
+      margin: 14px auto;
+      padding: 0 10px 18px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .brand-logo {
+      width: 52px;
+      height: 52px;
+      border-radius: 12px;
+      object-fit: cover;
+      border: 1px solid #d8dde6;
+      box-shadow: 0 2px 6px rgba(17, 24, 39, 0.12);
+      background: #fff;
+    }
+
+    .brand-title {
+      margin: 0;
+      line-height: 1.1;
+      font-size: 27px;
+      letter-spacing: 0.2px;
+    }
+
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 14px;
+      margin-bottom: 14px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 24px;
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .action-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .form-launcher {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px;
+      background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+      box-shadow: 0 3px 10px rgba(2, 8, 23, 0.07);
+      transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+      cursor: pointer;
+      text-align: left;
+      width: 100%;
+    }
+
+    .form-launcher:hover {
+      transform: translateY(-1px);
+      border-color: #9fb5d8;
+      box-shadow: 0 8px 18px rgba(2, 8, 23, 0.1);
+    }
+
+    .form-launcher h2 {
+      margin: 0 0 6px;
+      font-size: 22px;
+    }
+
+    .form-launcher p {
+      margin: 0;
+      color: #475467;
+      font-size: 14px;
+    }
+
+    .form-launcher .hint {
+      margin-top: 12px;
+      font-size: 12px;
+      color: #667085;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .form-grid .full { grid-column: 1 / -1; }
+
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 700;
+      margin-bottom: 4px;
+      color: #344054;
+    }
+
+    input, select, button {
+      width: 100%;
+      border: 1px solid #bcc5d1;
+      border-radius: 8px;
+      padding: 9px 10px;
+      font: inherit;
+      background: #fff;
+    }
+
+    button {
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    .btn-green {
+      background: var(--green);
+      color: #fff;
+      border-color: #0c6a41;
+    }
+
+    .btn-blue {
+      background: var(--blue);
+      color: #fff;
+      border-color: #2b64ca;
+    }
+
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(8, 12, 20, 0.55);
+      backdrop-filter: blur(1.5px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 90;
+    }
+
+    .modal-overlay.open {
+      display: flex;
+      animation: fadeIn 0.2s ease;
+    }
+
+    .modal-card {
+      width: min(640px, 100%);
+      background: #fff;
+      border-radius: 14px;
+      border: 1px solid #d4dae3;
+      padding: 14px;
+      box-shadow: 0 14px 34px rgba(15, 23, 42, 0.3);
+    }
+
+    .modal-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .modal-head h2 {
+      margin: 0;
+      font-size: 20px;
+    }
+
+    .close-btn {
+      width: auto;
+      min-width: 34px;
+      padding: 7px 10px;
+      border-radius: 8px;
+      background: #f4f6f9;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+
+    .tab-btn {
+      width: auto;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: #eef2f7;
+      border: 1px solid #d5dbe6;
+      color: #243447;
+    }
+
+    .tab-btn.active {
+      background: #dce8ff;
+      border-color: #b8cdfd;
+      color: #1e40af;
+    }
+
+    .tab-btn.alert-pending {
+      animation: pulsePending 1.2s ease-in-out infinite;
+      border-color: #ff8d8d;
+      color: #7f1d1d;
+      background: #ffe7e7;
+    }
+
+    @keyframes pulsePending {
+      0%, 100% {
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.0);
+        transform: translateY(0);
+      }
+      50% {
+        box-shadow: 0 0 0 5px rgba(239, 68, 68, 0.22);
+        transform: translateY(-1px);
+      }
+    }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    .sheet-wrap {
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      max-height: 70vh;
+    }
+
+    table.sheet {
+      width: 100%;
+      min-width: 1120px;
+      border-collapse: collapse;
+    }
+
+    table.sheet th,
+    table.sheet td {
+      border: 1px solid #606a74;
+      padding: 9px 10px;
+      vertical-align: middle;
+      font-size: 15px;
+      background: #fff;
+    }
+
+    table.sheet th {
+      color: #fff;
+      font-weight: 700;
+      text-align: center;
+      background: var(--header);
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+
+    table.sheet.history th,
+    table.sheet.resumen th {
+      background: var(--header-blue);
+      color: #0f172a;
+    }
+
+    #tableIngresos th:nth-child(1), #tableGastos th:nth-child(1), #tableCxC th:nth-child(1) { width: 130px; }
+    #tableIngresos th:nth-child(2), #tableGastos th:nth-child(2), #tableCxC th:nth-child(2) { width: 190px; }
+    #tableIngresos th:nth-child(3), #tableGastos th:nth-child(3), #tableCxC th:nth-child(3) { width: 260px; }
+    #tableIngresos th:nth-child(4), #tableGastos th:nth-child(4) { width: 170px; }
+    #tableIngresos th:nth-child(5), #tableGastos th:nth-child(5), #tableCxC th:nth-child(4) { width: 150px; }
+    #tableIngresos th:nth-child(6), #tableCxC th:nth-child(6) { width: 150px; }
+
+    .sheet-input,
+    .sheet-select {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #c6cbd2;
+      border-radius: 6px;
+      font-size: 15px;
+      background: #fff;
+    }
+
+    .money { text-align: right; }
+
+    .state-pill {
+      font-weight: 700;
+      color: #fff;
+      border: none;
+      text-align: center;
+    }
+
+    .state-pill.si { background: var(--ok); }
+    .state-pill.no { background: #ff2e2e; }
+
+    .small-btn {
+      width: auto;
+      padding: 6px 8px;
+      border-radius: 6px;
+      font-size: 12px;
+      margin-right: 4px;
+      border: 1px solid #c9d1dc;
+      background: #f8fafc;
+    }
+
+    .danger { color: #b42318; border-color: #fecaca; background: #fff1f2; }
+
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .kpi {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: #fff;
+    }
+
+    .kpi h3 {
+      margin: 0;
+      font-size: 14px;
+      color: #475467;
+      font-weight: 700;
+    }
+
+    .kpi .value {
+      margin-top: 8px;
+      font-size: 28px;
+      font-weight: 800;
+    }
+
+    @media (max-width: 920px) {
+      .form-grid { grid-template-columns: 1fr; }
+      table.sheet { min-width: 930px; }
+      .brand-title { font-size: 22px; }
+    }
+
+    @media (max-width: 700px) {
+      .app { width: 100%; margin: 0; padding: 8px; }
+      .panel { padding: 10px; border-radius: 8px; }
+      .brand-logo { width: 42px; height: 42px; border-radius: 10px; }
+      .brand-title { font-size: 20px; }
+      .action-cards { grid-template-columns: 1fr; }
+      .tab-btn { font-size: 13px; padding: 7px 10px; }
+      .sheet-wrap { max-height: 60vh; }
+      table.sheet { min-width: 840px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="panel">
+      <div class="brand">
+        <img src="./Wallyimagen.jpg" alt="Wallyimagen" class="brand-logo">
+        <div>
+          <h1 class="brand-title">Barbuta Kitchen</h1>
+          <div class="muted">Control financiero / inventario con historial automatico y cuentas por cobrar.</div>
+        </div>
+      </div>
+
+      <div class="action-cards">
+        <button type="button" class="form-launcher" id="openIngresoModal">
+          <h2>Ingreso</h2>
+          <p>Registrar ventas y estado de cobro.</p>
+          <div class="hint">Click para abrir formulario</div>
+        </button>
+
+        <button type="button" class="form-launcher" id="openGastoModal">
+          <h2>Gastos</h2>
+          <p>Registrar egresos del negocio.</p>
+          <div class="hint">Click para abrir formulario</div>
+        </button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="ingresos">Ingresos</button>
+        <button class="tab-btn" data-tab="histIngresos">Historial Ingresos</button>
+        <button class="tab-btn" data-tab="gastos">Gastos</button>
+        <button class="tab-btn" data-tab="histGastos">Historial Gastos</button>
+        <button class="tab-btn" data-tab="cxc" id="tabBtnCxc">Cuentas por Cobrar</button>
+        <button class="tab-btn" data-tab="resumen">Resumen</button>
+      </div>
+
+      <section id="tab-ingresos" class="tab-panel active">
+        <div class="toolbar">
+          <strong>Hoja: Ingresos</strong>
+          <button class="small-btn" onclick="addEmptyIngresoRow()">Agregar fila vacia</button>
+        </div>
+        <div class="sheet-wrap">
+          <table class="sheet" id="tableIngresos">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Tipo de venta</th>
+                <th>Descripcion</th>
+                <th>Metodo de pago</th>
+                <th>Monto</th>
+                <th>Cobrado (Si/No)</th>
+                <th>Accion</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="tab-histIngresos" class="tab-panel">
+        <div class="toolbar"><strong>Hoja: Historial Ingresos</strong></div>
+        <div class="sheet-wrap">
+          <table class="sheet history" id="tableHistIngresos">
+            <thead>
+              <tr>
+                <th>Timestamp</th>
+                <th>Fecha</th>
+                <th>Tipo de venta</th>
+                <th>Descripcion</th>
+                <th>Metodo de pago</th>
+                <th>Monto</th>
+                <th>Cobrado (Si/No)</th>
+                <th>Origen</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="tab-gastos" class="tab-panel">
+        <div class="toolbar">
+          <strong>Hoja: Gastos</strong>
+          <button class="small-btn" onclick="addEmptyGastoRow()">Agregar fila vacia</button>
+        </div>
+        <div class="sheet-wrap">
+          <table class="sheet" id="tableGastos">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Tipo de gasto</th>
+                <th>Descripcion</th>
+                <th>Metodo de pago</th>
+                <th>Monto</th>
+                <th>Accion</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="tab-histGastos" class="tab-panel">
+        <div class="toolbar"><strong>Hoja: Historial Gastos</strong></div>
+        <div class="sheet-wrap">
+          <table class="sheet history" id="tableHistGastos">
+            <thead>
+              <tr>
+                <th>Timestamp</th>
+                <th>Fecha</th>
+                <th>Tipo de gasto</th>
+                <th>Descripcion</th>
+                <th>Metodo de pago</th>
+                <th>Monto</th>
+                <th>Origen</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="tab-cxc" class="tab-panel">
+        <div class="toolbar"><strong>Hoja: Cuentas por Cobrar</strong></div>
+        <div class="sheet-wrap">
+          <table class="sheet" id="tableCxC">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Tipo de venta</th>
+                <th>Descripcion</th>
+                <th>Monto</th>
+                <th>Fecha de cobro</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="tab-resumen" class="tab-panel">
+        <div class="toolbar"><strong>Hoja: Resumen</strong></div>
+
+        <div class="summary-grid">
+          <div class="kpi">
+            <h3>Total ingresos cobrados</h3>
+            <div id="kpiIngresos" class="value">$0.00</div>
+          </div>
+          <div class="kpi">
+            <h3>Total gastos</h3>
+            <div id="kpiGastos" class="value">$0.00</div>
+          </div>
+          <div class="kpi">
+            <h3>Total por cobrar</h3>
+            <div id="kpiCxC" class="value">$0.00</div>
+          </div>
+        </div>
+
+        <div class="sheet-wrap">
+          <table class="sheet resumen">
+            <thead>
+              <tr>
+                <th>INGRESOS</th>
+                <th>GASTOS</th>
+                <th>X COBRAR</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td id="resIngresos" class="money" style="font-size:30px;font-weight:800;">$0.00</td>
+                <td id="resGastos" class="money" style="font-size:30px;font-weight:800;">$0.00</td>
+                <td id="resCxC" class="money" style="font-size:30px;font-weight:800;">$0.00</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="modalIngreso">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2>Formulario de Ingreso</h2>
+        <button type="button" class="close-btn" data-close-modal="modalIngreso">Cerrar</button>
+      </div>
+      <form id="formIngreso">
+        <div class="form-grid">
+          <div>
+            <label>Fecha</label>
+            <input type="date" name="fecha" required>
+          </div>
+          <div>
+            <label>Tipo de venta</label>
+            <input type="text" name="tipoVenta" required>
+          </div>
+          <div class="full">
+            <label>Descripcion</label>
+            <input type="text" name="descripcion" required>
+          </div>
+          <div>
+            <label>Metodo de pago</label>
+            <input type="text" name="metodo" required>
+          </div>
+          <div>
+            <label>Monto</label>
+            <input type="text" name="monto" placeholder="Ej: 1500 o 1,500.00" required>
+          </div>
+          <div>
+            <label>Cobrado (Si/No)</label>
+            <select name="cobrado" required>
+              <option value="Si">Si</option>
+              <option value="No">No</option>
+            </select>
+          </div>
+          <div class="full">
+            <button class="btn-green" type="submit">Registrar ingreso</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="modalGasto">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2>Formulario de Gastos</h2>
+        <button type="button" class="close-btn" data-close-modal="modalGasto">Cerrar</button>
+      </div>
+      <form id="formGasto">
+        <div class="form-grid">
+          <div>
+            <label>Fecha</label>
+            <input type="date" name="fecha" required>
+          </div>
+          <div>
+            <label>Tipo de gasto</label>
+            <input type="text" name="tipoGasto" required>
+          </div>
+          <div class="full">
+            <label>Descripcion</label>
+            <input type="text" name="descripcion" required>
+          </div>
+          <div>
+            <label>Metodo de pago</label>
+            <input type="text" name="metodo" required>
+          </div>
+          <div>
+            <label>Monto</label>
+            <input type="text" name="monto" placeholder="Ej: 500" required>
+          </div>
+          <div class="full">
+            <button class="btn-blue" type="submit">Registrar gasto</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const STORAGE_KEY = 'control_finanzas_inventario_v1';
+
+    const state = loadState();
+
+    document.addEventListener('DOMContentLoaded', () => {
+      setupTabs();
+      bindModalUI();
+      bindForms();
+      recalculateAndRender();
+    });
+
+    function initialState() {
+      return {
+        ingresos: [],
+        gastos: [],
+        cxc: [],
+        histIngresos: [],
+        histGastos: [],
+      };
+    }
+
+    function loadState() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return initialState();
+        const parsed = JSON.parse(raw);
+        return {
+          ingresos: Array.isArray(parsed.ingresos) ? parsed.ingresos : [],
+          gastos: Array.isArray(parsed.gastos) ? parsed.gastos : [],
+          cxc: Array.isArray(parsed.cxc) ? parsed.cxc : [],
+          histIngresos: Array.isArray(parsed.histIngresos) ? parsed.histIngresos : [],
+          histGastos: Array.isArray(parsed.histGastos) ? parsed.histGastos : [],
+        };
+      } catch (_) {
+        return initialState();
+      }
+    }
+
+    function saveState() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+
+    function setupTabs() {
+      document.querySelectorAll('.tab-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const tab = btn.dataset.tab;
+
+          document.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'));
+          btn.classList.add('active');
+
+          document.querySelectorAll('.tab-panel').forEach((p) => p.classList.remove('active'));
+          document.getElementById('tab-' + tab).classList.add('active');
+        });
+      });
+    }
+
+    function bindModalUI() {
+      const openIngresoBtn = document.getElementById('openIngresoModal');
+      const openGastoBtn = document.getElementById('openGastoModal');
+      const modalIngreso = document.getElementById('modalIngreso');
+      const modalGasto = document.getElementById('modalGasto');
+
+      openIngresoBtn.addEventListener('click', () => openModal(modalIngreso));
+      openGastoBtn.addEventListener('click', () => openModal(modalGasto));
+
+      document.querySelectorAll('[data-close-modal]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-close-modal');
+          const modal = document.getElementById(id);
+          closeModal(modal);
+        });
+      });
+
+      [modalIngreso, modalGasto].forEach((modal) => {
+        modal.addEventListener('click', (e) => {
+          if (e.target === modal) closeModal(modal);
+        });
+      });
+
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          [modalIngreso, modalGasto].forEach((modal) => closeModal(modal));
+        }
+      });
+    }
+
+    function openModal(modal) {
+      if (!modal) return;
+      modal.classList.add('open');
+    }
+
+    function closeModal(modal) {
+      if (!modal) return;
+      modal.classList.remove('open');
+    }
+
+    function bindForms() {
+      const formIngreso = document.getElementById('formIngreso');
+      formIngreso.addEventListener('submit', (e) => {
+        e.preventDefault();
+
+        const data = new FormData(formIngreso);
+        const row = {
+          id: uid('ING'),
+          fecha: clean(data.get('fecha')),
+          tipoVenta: clean(data.get('tipoVenta')),
+          descripcion: clean(data.get('descripcion')),
+          metodo: clean(data.get('metodo')),
+          monto: clean(data.get('monto')),
+          cobrado: normalizeEstado(data.get('cobrado')) === 'si' ? 'Si' : 'No',
+          lastHistEstado: '',
+        };
+
+        if (!isIngresoComplete(row)) {
+          alert('Completa todos los campos del ingreso correctamente.');
+          return;
+        }
+
+        state.ingresos.push(row);
+        processIngresoRow(row, 'Boton ingreso');
+        syncCxC();
+        recalculateAndRender();
+        formIngreso.reset();
+        closeModal(document.getElementById('modalIngreso'));
+      });
+
+      const formGasto = document.getElementById('formGasto');
+      formGasto.addEventListener('submit', (e) => {
+        e.preventDefault();
+
+        const data = new FormData(formGasto);
+        const row = {
+          id: uid('GAS'),
+          fecha: clean(data.get('fecha')),
+          tipoGasto: clean(data.get('tipoGasto')),
+          descripcion: clean(data.get('descripcion')),
+          metodo: clean(data.get('metodo')),
+          monto: clean(data.get('monto')),
+          histOk: false,
+        };
+
+        if (!isGastoComplete(row)) {
+          alert('Completa todos los campos del gasto correctamente.');
+          return;
+        }
+
+        state.gastos.push(row);
+        processGastoRow(row, 'Boton gasto');
+        recalculateAndRender();
+        formGasto.reset();
+        closeModal(document.getElementById('modalGasto'));
+      });
+    }
+
+    function addEmptyIngresoRow() {
+      state.ingresos.push({
+        id: '',
+        fecha: '',
+        tipoVenta: '',
+        descripcion: '',
+        metodo: '',
+        monto: '',
+        cobrado: 'No',
+        lastHistEstado: '',
+      });
+      recalculateAndRender();
+    }
+
+    function addEmptyGastoRow() {
+      state.gastos.push({
+        id: '',
+        fecha: '',
+        tipoGasto: '',
+        descripcion: '',
+        metodo: '',
+        monto: '',
+        histOk: false,
+      });
+      recalculateAndRender();
+    }
+
+    function updateIngreso(index, field, value) {
+      const row = state.ingresos[index];
+      if (!row) return;
+
+      row[field] = field === 'cobrado' ? (normalizeEstado(value) === 'si' ? 'Si' : 'No') : value;
+
+      processIngresoRow(row, 'Ingresos');
+      syncCxC();
+      recalculateAndRender();
+    }
+
+    function deleteIngreso(index) {
+      state.ingresos.splice(index, 1);
+      syncCxC();
+      recalculateAndRender();
+    }
+
+    function updateGasto(index, field, value) {
+      const row = state.gastos[index];
+      if (!row) return;
+
+      row[field] = value;
+
+      processGastoRow(row, 'Gastos');
+      recalculateAndRender();
+    }
+
+    function deleteGasto(index) {
+      state.gastos.splice(index, 1);
+      recalculateAndRender();
+    }
+
+    function updateCxC(index, field, value) {
+      const row = state.cxc[index];
+      if (!row) return;
+
+      row[field] = field === 'estado' ? (normalizeEstado(value) === 'si' ? 'Si' : 'No') : value;
+
+      if (field === 'estado' || field === 'fechaCobro') {
+        processCxCRow(row);
+      }
+
+      syncCxC();
+      recalculateAndRender();
+    }
+
+    function processIngresoRow(row, origen) {
+      if (isIngresoEmpty(row)) {
+        row.id = '';
+        row.lastHistEstado = '';
+        return;
+      }
+
+      if (!isIngresoComplete(row)) return;
+
+      ensureIngresoId(row);
+      const estado = normalizeEstado(row.cobrado);
+      const last = normalizeEstado(row.lastHistEstado);
+
+      if (last === estado) return;
+
+      appendHistIngreso(row, origen);
+      row.lastHistEstado = estado === 'si' ? 'Si' : 'No';
+    }
+
+    function processGastoRow(row, origen) {
+      if (isGastoEmpty(row)) {
+        row.id = '';
+        row.histOk = false;
+        return;
+      }
+
+      if (!isGastoComplete(row)) return;
+
+      ensureGastoId(row);
+      if (row.histOk) return;
+
+      appendHistGasto(row, origen);
+      row.histOk = true;
+    }
+
+    function processCxCRow(cxcRow) {
+      if (normalizeEstado(cxcRow.estado) !== 'si') return;
+
+      const ingreso = findIngresoFromCxC(cxcRow);
+      if (!ingreso) return;
+
+      if (normalizeEstado(ingreso.cobrado) !== 'si') {
+        ingreso.cobrado = 'Si';
+      }
+
+      processIngresoRow(ingreso, 'Cuentas por Cobrar');
+
+      if (!parseDate(cxcRow.fechaCobro)) {
+        cxcRow.fechaCobro = toInputDate(new Date());
+      }
+    }
+
+    function findIngresoFromCxC(cxcRow) {
+      if (cxcRow.ingresoId) {
+        const byId = state.ingresos.find((r) => clean(r.id) === clean(cxcRow.ingresoId));
+        if (byId) return byId;
+      }
+
+      const targetKey = buildKey(cxcRow.fecha, cxcRow.tipoVenta, cxcRow.descripcion, cxcRow.monto);
+      return state.ingresos.find((r) => buildKey(r.fecha, r.tipoVenta, r.descripcion, r.monto) === targetKey) || null;
+    }
+
+    function syncCxC() {
+      const byIdFechaCobro = {};
+      const byKeyFechaCobro = {};
+
+      state.cxc.forEach((r) => {
+        if (r.ingresoId && parseDate(r.fechaCobro)) {
+          byIdFechaCobro[r.ingresoId] = r.fechaCobro;
+        }
+
+        const key = buildKey(r.fecha, r.tipoVenta, r.descripcion, r.monto);
+        if (parseDate(r.fechaCobro)) byKeyFechaCobro[key] = r.fechaCobro;
+      });
+
+      const pendientes = [];
+
+      state.ingresos.forEach((r) => {
+        if (!isIngresoComplete(r)) return;
+        if (normalizeEstado(r.cobrado) !== 'no') return;
+
+        ensureIngresoId(r);
+
+        const key = buildKey(r.fecha, r.tipoVenta, r.descripcion, r.monto);
+        pendientes.push({
+          fecha: r.fecha,
+          tipoVenta: r.tipoVenta,
+          descripcion: r.descripcion,
+          monto: toNumber(r.monto),
+          fechaCobro: byIdFechaCobro[r.id] || byKeyFechaCobro[key] || '',
+          estado: 'No',
+          ingresoId: r.id,
+        });
+      });
+
+      state.cxc = pendientes;
+    }
+
+    function appendHistIngreso(row, origen) {
+      const estadoNorm = normalizeEstado(row.cobrado);
+      if (estadoNorm !== 'si' && estadoNorm !== 'no') return;
+
+      state.histIngresos.push({
+        timestamp: new Date().toISOString(),
+        fecha: row.fecha,
+        tipoVenta: clean(row.tipoVenta),
+        descripcion: clean(row.descripcion),
+        metodo: clean(row.metodo),
+        monto: toNumber(row.monto),
+        cobrado: estadoNorm === 'si' ? 'Si' : 'No',
+        origen: origen,
+        eventId: uid('HEI'),
+        ingresoId: row.id || '',
+      });
+    }
+
+    function appendHistGasto(row, origen) {
+      state.histGastos.push({
+        timestamp: new Date().toISOString(),
+        fecha: row.fecha,
+        tipoGasto: clean(row.tipoGasto),
+        descripcion: clean(row.descripcion),
+        metodo: clean(row.metodo),
+        monto: toNumber(row.monto),
+        origen: origen,
+        eventId: uid('HEG'),
+        gastoId: row.id || '',
+      });
+    }
+
+    function recalculateAndRender() {
+      const resumen = calculateResumen();
+      renderIngresos();
+      renderHistIngresos();
+      renderGastos();
+      renderHistGastos();
+      renderCxC();
+      renderResumen(resumen);
+      setCxcPendingAlert();
+      saveState();
+    }
+
+    function setCxcPendingAlert() {
+      const tabBtn = document.getElementById('tabBtnCxc');
+      if (!tabBtn) return;
+
+      if (Array.isArray(state.cxc) && state.cxc.length > 0) {
+        tabBtn.classList.add('alert-pending');
+      } else {
+        tabBtn.classList.remove('alert-pending');
+      }
+    }
+
+    function calculateResumen() {
+      let ingresosCobrados = 0;
+      let gastos = 0;
+      let porCobrar = 0;
+
+      state.ingresos.forEach((r) => {
+        if (!rowHasAnyValue([r.fecha, r.tipoVenta, r.descripcion, r.metodo, r.monto, r.cobrado])) return;
+        const monto = toNumber(r.monto);
+        const estado = normalizeEstado(r.cobrado);
+
+        if (estado === 'si') ingresosCobrados += monto;
+        else if (estado === 'no') porCobrar += monto;
+      });
+
+      state.gastos.forEach((r) => {
+        if (!rowHasAnyValue([r.fecha, r.tipoGasto, r.descripcion, r.metodo, r.monto])) return;
+        gastos += toNumber(r.monto);
+      });
+
+      return { ingresosCobrados, gastos, porCobrar };
+    }
+
+    function renderIngresos() {
+      const tbody = document.querySelector('#tableIngresos tbody');
+      tbody.innerHTML = state.ingresos.map((r, i) => {
+        const estadoNorm = normalizeEstado(r.cobrado);
+        const estadoClass = estadoNorm === 'si' ? 'si' : 'no';
+
+        return `
+          <tr>
+            <td><input class="sheet-input" type="date" value="${esc(toInputDate(r.fecha))}" onchange="updateIngreso(${i}, 'fecha', this.value)"></td>
+            <td><input class="sheet-input" value="${esc(r.tipoVenta)}" onchange="updateIngreso(${i}, 'tipoVenta', this.value)"></td>
+            <td><input class="sheet-input" value="${esc(r.descripcion)}" onchange="updateIngreso(${i}, 'descripcion', this.value)"></td>
+            <td><input class="sheet-input" value="${esc(r.metodo)}" onchange="updateIngreso(${i}, 'metodo', this.value)"></td>
+            <td><input class="sheet-input money" value="${esc(r.monto)}" onchange="updateIngreso(${i}, 'monto', this.value)"></td>
+            <td>
+              <select class="sheet-select state-pill ${estadoClass}" onchange="updateIngreso(${i}, 'cobrado', this.value)">
+                <option ${estadoNorm === 'si' ? 'selected' : ''}>Si</option>
+                <option ${estadoNorm === 'no' ? 'selected' : ''}>No</option>
+              </select>
+            </td>
+            <td><button class="small-btn danger" onclick="deleteIngreso(${i})">Eliminar</button></td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderHistIngresos() {
+      const tbody = document.querySelector('#tableHistIngresos tbody');
+      tbody.innerHTML = state.histIngresos.map((r) => `
+        <tr>
+          <td>${esc(formatDateTime(r.timestamp))}</td>
+          <td>${esc(formatDate(r.fecha))}</td>
+          <td>${esc(r.tipoVenta)}</td>
+          <td>${esc(r.descripcion)}</td>
+          <td>${esc(r.metodo)}</td>
+          <td class="money">${esc(formatMoney(r.monto))}</td>
+          <td>${esc(r.cobrado)}</td>
+          <td>${esc(r.origen)}</td>
+        </tr>
+      `).join('');
+    }
+
+    function renderGastos() {
+      const tbody = document.querySelector('#tableGastos tbody');
+      tbody.innerHTML = state.gastos.map((r, i) => `
+        <tr>
+          <td><input class="sheet-input" type="date" value="${esc(toInputDate(r.fecha))}" onchange="updateGasto(${i}, 'fecha', this.value)"></td>
+          <td><input class="sheet-input" value="${esc(r.tipoGasto)}" onchange="updateGasto(${i}, 'tipoGasto', this.value)"></td>
+          <td><input class="sheet-input" value="${esc(r.descripcion)}" onchange="updateGasto(${i}, 'descripcion', this.value)"></td>
+          <td><input class="sheet-input" value="${esc(r.metodo)}" onchange="updateGasto(${i}, 'metodo', this.value)"></td>
+          <td><input class="sheet-input money" value="${esc(r.monto)}" onchange="updateGasto(${i}, 'monto', this.value)"></td>
+          <td><button class="small-btn danger" onclick="deleteGasto(${i})">Eliminar</button></td>
+        </tr>
+      `).join('');
+    }
+
+    function renderHistGastos() {
+      const tbody = document.querySelector('#tableHistGastos tbody');
+      tbody.innerHTML = state.histGastos.map((r) => `
+        <tr>
+          <td>${esc(formatDateTime(r.timestamp))}</td>
+          <td>${esc(formatDate(r.fecha))}</td>
+          <td>${esc(r.tipoGasto)}</td>
+          <td>${esc(r.descripcion)}</td>
+          <td>${esc(r.metodo)}</td>
+          <td class="money">${esc(formatMoney(r.monto))}</td>
+          <td>${esc(r.origen)}</td>
+        </tr>
+      `).join('');
+    }
+
+    function renderCxC() {
+      const tbody = document.querySelector('#tableCxC tbody');
+      tbody.innerHTML = state.cxc.map((r, i) => {
+        const estadoNorm = normalizeEstado(r.estado);
+        const estadoClass = estadoNorm === 'si' ? 'si' : 'no';
+
+        return `
+          <tr>
+            <td>${esc(formatDate(r.fecha))}</td>
+            <td>${esc(r.tipoVenta)}</td>
+            <td>${esc(r.descripcion)}</td>
+            <td class="money">${esc(formatMoney(r.monto))}</td>
+            <td>
+              <input
+                class="sheet-input"
+                type="date"
+                value="${esc(toInputDate(r.fechaCobro))}"
+                onchange="updateCxC(${i}, 'fechaCobro', this.value)">
+            </td>
+            <td>
+              <select class="sheet-select state-pill ${estadoClass}" onchange="updateCxC(${i}, 'estado', this.value)">
+                <option ${estadoNorm === 'si' ? 'selected' : ''}>Si</option>
+                <option ${estadoNorm === 'no' ? 'selected' : ''}>No</option>
+              </select>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderResumen(res) {
+      const ingresos = formatMoney(res.ingresosCobrados);
+      const gastos = formatMoney(res.gastos);
+      const cxc = formatMoney(res.porCobrar);
+
+      document.getElementById('kpiIngresos').textContent = ingresos;
+      document.getElementById('kpiGastos').textContent = gastos;
+      document.getElementById('kpiCxC').textContent = cxc;
+
+      document.getElementById('resIngresos').textContent = ingresos;
+      document.getElementById('resGastos').textContent = gastos;
+      document.getElementById('resCxC').textContent = cxc;
+    }
+
+    function rowHasAnyValue(row) {
+      return row.some((v) => clean(v) !== '');
+    }
+
+    function isIngresoEmpty(r) {
+      return !rowHasAnyValue([r.fecha, r.tipoVenta, r.descripcion, r.metodo, r.monto, r.cobrado]);
+    }
+
+    function isGastoEmpty(r) {
+      return !rowHasAnyValue([r.fecha, r.tipoGasto, r.descripcion, r.metodo, r.monto]);
+    }
+
+    function isIngresoComplete(r) {
+      const estado = normalizeEstado(r.cobrado);
+      return (
+        !!parseDate(r.fecha) &&
+        clean(r.tipoVenta) !== '' &&
+        clean(r.descripcion) !== '' &&
+        clean(r.metodo) !== '' &&
+        toNumber(r.monto) > 0 &&
+        (estado === 'si' || estado === 'no')
+      );
+    }
+
+    function isGastoComplete(r) {
+      return (
+        !!parseDate(r.fecha) &&
+        clean(r.tipoGasto) !== '' &&
+        clean(r.descripcion) !== '' &&
+        clean(r.metodo) !== '' &&
+        toNumber(r.monto) > 0
+      );
+    }
+
+    function ensureIngresoId(r) {
+      if (!clean(r.id)) r.id = uid('ING');
+    }
+
+    function ensureGastoId(r) {
+      if (!clean(r.id)) r.id = uid('GAS');
+    }
+
+    function buildKey(fecha, tipoVenta, descripcion, monto) {
+      return [dateKey(fecha), clean(tipoVenta).toLowerCase(), clean(descripcion).toLowerCase(), toNumber(monto).toFixed(2)].join('|');
+    }
+
+    function dateKey(v) {
+      const d = parseDate(v);
+      if (!d) return clean(v);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return y + '-' + m + '-' + day;
+    }
+
+    function parseDate(v) {
+      if (v instanceof Date && !isNaN(v.getTime())) {
+        return new Date(v.getFullYear(), v.getMonth(), v.getDate());
+      }
+
+      const s = clean(v);
+      if (!s) return null;
+
+      let m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (m) return safeDate(Number(m[1]), Number(m[2]), Number(m[3]));
+
+      m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+      if (m) return safeDate(Number(m[3]), Number(m[2]), Number(m[1]));
+
+      m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2})$/);
+      if (m) {
+        const yy = Number(m[3]);
+        const yyyy = yy >= 70 ? 1900 + yy : 2000 + yy;
+        return safeDate(yyyy, Number(m[2]), Number(m[1]));
+      }
+
+      return null;
+    }
+
+    function safeDate(year, month, day) {
+      const d = new Date(year, month - 1, day);
+      if (d.getFullYear() !== year || d.getMonth() !== month - 1 || d.getDate() !== day) return null;
+      return d;
+    }
+
+    function normalizeEstado(v) {
+      const s = String(v == null ? '' : v)
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+      if (s === 'si') return 'si';
+      if (s === 'no') return 'no';
+      return s;
+    }
+
+    function toNumber(v) {
+      if (typeof v === 'number') return isFinite(v) ? v : 0;
+      const s = String(v == null ? '' : v).trim();
+      if (!s) return 0;
+
+      let n = s.replace(/[^\d,\.\-]/g, '').replace(/\s/g, '');
+      const hasComma = n.indexOf(',') !== -1;
+      const hasDot = n.indexOf('.') !== -1;
+
+      if (hasComma && hasDot) {
+        const lastComma = n.lastIndexOf(',');
+        const lastDot = n.lastIndexOf('.');
+        n = lastComma > lastDot ? n.replace(/\./g, '').replace(',', '.') : n.replace(/,/g, '');
+      } else if (hasComma && !hasDot) {
+        n = n.replace(/\./g, '').replace(',', '.');
+      } else {
+        n = n.replace(/,/g, '');
+      }
+
+      const out = Number(n);
+      return isFinite(out) ? out : 0;
+    }
+
+    function formatDate(v) {
+      const d = parseDate(v);
+      if (!d) return '';
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
+      return `${day}/${month}/${year}`;
+    }
+
+    function formatDateTime(v) {
+      const d = new Date(v);
+      if (isNaN(d.getTime())) return '';
+
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
+      const hh = String(d.getHours()).padStart(2, '0');
+      const mm = String(d.getMinutes()).padStart(2, '0');
+      const ss = String(d.getSeconds()).padStart(2, '0');
+
+      return `${day}/${month}/${year} ${hh}:${mm}:${ss}`;
+    }
+
+    function toInputDate(v) {
+      const d = parseDate(v);
+      if (!d) return '';
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+
+    function formatMoney(v) {
+      const n = toNumber(v);
+      return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function uid(prefix) {
+      const rand = Math.random().toString(36).slice(2, 9);
+      return `${prefix}-${Date.now()}-${rand}`;
+    }
+
+    function clean(v) {
+      return String(v == null ? '' : v).trim();
+    }
+
+    function esc(v) {
+      return String(v == null ? '' : v)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+  </script>
+</body>
+</html>

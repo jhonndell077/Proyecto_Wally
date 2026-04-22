@@ -1,0 +1,9 @@
+# OS / editor
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Local backups and temp checks
+index.backup.before-ui-*.html
+_tmp_check.js
+
