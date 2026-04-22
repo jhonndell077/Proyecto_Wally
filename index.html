@@ -429,7 +429,6 @@
       <section id="tab-ingresos" class="tab-panel active">
         <div class="toolbar">
           <strong>Hoja: Ingresos</strong>
-          <button class="small-btn" onclick="addEmptyIngresoRow()">Agregar fila vacia</button>
         </div>
         <div class="sheet-wrap">
           <table class="sheet" id="tableIngresos">
@@ -450,7 +449,10 @@
       </section>
 
       <section id="tab-histIngresos" class="tab-panel">
-        <div class="toolbar"><strong>Hoja: Historial Ingresos</strong></div>
+        <div class="toolbar">
+          <strong>Hoja: Historial Ingresos</strong>
+          <button class="small-btn danger" onclick="clearHistIngresos()">Eliminar historial</button>
+        </div>
         <div class="sheet-wrap">
           <table class="sheet history" id="tableHistIngresos">
             <thead>
@@ -463,6 +465,7 @@
                 <th>Monto</th>
                 <th>Cobrado (Si/No)</th>
                 <th>Origen</th>
+                <th>Accion</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -493,7 +496,10 @@
       </section>
 
       <section id="tab-histGastos" class="tab-panel">
-        <div class="toolbar"><strong>Hoja: Historial Gastos</strong></div>
+        <div class="toolbar">
+          <strong>Hoja: Historial Gastos</strong>
+          <button class="small-btn danger" onclick="clearHistGastos()">Eliminar historial</button>
+        </div>
         <div class="sheet-wrap">
           <table class="sheet history" id="tableHistGastos">
             <thead>
@@ -505,6 +511,7 @@
                 <th>Metodo de pago</th>
                 <th>Monto</th>
                 <th>Origen</th>
+                <th>Accion</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -864,6 +871,30 @@
       recalculateAndRender();
     }
 
+    function deleteHistIngreso(index) {
+      state.histIngresos.splice(index, 1);
+      recalculateAndRender();
+    }
+
+    function clearHistIngresos() {
+      if (!state.histIngresos.length) return;
+      if (!confirm('Se eliminara todo el historial de ingresos. Deseas continuar?')) return;
+      state.histIngresos = [];
+      recalculateAndRender();
+    }
+
+    function deleteHistGasto(index) {
+      state.histGastos.splice(index, 1);
+      recalculateAndRender();
+    }
+
+    function clearHistGastos() {
+      if (!state.histGastos.length) return;
+      if (!confirm('Se eliminara todo el historial de gastos. Deseas continuar?')) return;
+      state.histGastos = [];
+      recalculateAndRender();
+    }
+
     function updateCxC(index, field, value) {
       const row = state.cxc[index];
       if (!row) return;
@@ -1080,7 +1111,7 @@
 
     function renderHistIngresos() {
       const tbody = document.querySelector('#tableHistIngresos tbody');
-      tbody.innerHTML = state.histIngresos.map((r) => `
+      tbody.innerHTML = state.histIngresos.map((r, i) => `
         <tr>
           <td>${esc(formatDateTime(r.timestamp))}</td>
           <td>${esc(formatDate(r.fecha))}</td>
@@ -1090,6 +1121,7 @@
           <td class="money">${esc(formatMoney(r.monto))}</td>
           <td>${esc(r.cobrado)}</td>
           <td>${esc(r.origen)}</td>
+          <td><button class="small-btn danger" onclick="deleteHistIngreso(${i})">Eliminar</button></td>
         </tr>
       `).join('');
     }
@@ -1110,7 +1142,7 @@
 
     function renderHistGastos() {
       const tbody = document.querySelector('#tableHistGastos tbody');
-      tbody.innerHTML = state.histGastos.map((r) => `
+      tbody.innerHTML = state.histGastos.map((r, i) => `
         <tr>
           <td>${esc(formatDateTime(r.timestamp))}</td>
           <td>${esc(formatDate(r.fecha))}</td>
@@ -1119,6 +1151,7 @@
           <td>${esc(r.metodo)}</td>
           <td class="money">${esc(formatMoney(r.monto))}</td>
           <td>${esc(r.origen)}</td>
+          <td><button class="small-btn danger" onclick="deleteHistGasto(${i})">Eliminar</button></td>
         </tr>
       `).join('');
     }
