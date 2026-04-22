@@ -1,5 +1,6 @@
 {
   "hosting": {
+    "site": "proyecto-green-luro-control",
     "public": ".",
     "ignore": [
       ".git/**",
@@ -28,6 +29,11 @@
       "database": "barbuta-kitchen",
       "rules": "firestore.barbuta-kitchen.rules",
       "indexes": "firestore.barbuta-kitchen.indexes.json"
+    },
+    {
+      "database": "proyecto-green",
+      "rules": "firestore.proyecto-green.rules",
+      "indexes": "firestore.proyecto-green.indexes.json"
     }
   ]
 }
